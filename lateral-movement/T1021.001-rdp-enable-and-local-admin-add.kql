@@ -1,0 +1,16 @@
+// Name        : RDP enablement + local admin account creation
+// Technique   : T1021.001 (Remote Desktop Protocol) / T1136.001 (Create Account: Local)
+// Tactic      : Lateral Movement / Persistence
+// Platform    : Advanced Hunting (unified Microsoft Defender / SecOps portal)
+// Data source : DeviceProcessEvents
+// Description : Registry edit enabling RDP (fDenyTSConnections=0), or creation of
+//               a new local account / addition to the local Administrators group.
+// Tuning      : Exclude provisioning and helpdesk tooling. Noisy in some estates -
+//               scope to servers or off-hours before promoting to an alert.
+// References  : Spirals ransomware (Symantec, 2026-06)
+DeviceProcessEvents
+| where Timestamp > ago(30d)
+| where (ProcessCommandLine has "fDenyTSConnections" and ProcessCommandLine has "0")
+   or (FileName =~ "net.exe" and ProcessCommandLine has_all ("user","/add"))
+   or (FileName =~ "net.exe" and ProcessCommandLine has_all ("localgroup","administrators","/add"))
+| project Timestamp, DeviceName, AccountName, ProcessCommandLine, InitiatingProcessFileName

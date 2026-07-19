@@ -1,0 +1,16 @@
+// Name        : Microsoft Defender tamper / disable
+// Technique   : T1562.001 - Impair Defenses: Disable or Modify Tools
+// Tactic      : Defense Evasion
+// Platform    : Advanced Hunting (unified Microsoft Defender / SecOps portal)
+// Data source : DeviceProcessEvents
+// Description : Commands that disable Defender real-time protection, remove
+//               threat definitions, or uninstall the AV feature.
+// Tuning      : Exclude sanctioned management tooling / imaging tasks.
+//               Enforce Tamper Protection so these attempts fail, not just alert.
+// References  : Spirals ransomware (Symantec, 2026-06)
+DeviceProcessEvents
+| where Timestamp > ago(30d)
+| where ProcessCommandLine has_any (
+    "Set-MpPreference","DisableRealtimeMonitoring","DisableAntiSpyware",
+    "MpCmdRun.exe -RemoveDefinitions","Remove-MpThreat","Uninstall-WindowsFeature Windows-Defender")
+| project Timestamp, DeviceName, AccountName, ProcessCommandLine, InitiatingProcessFileName

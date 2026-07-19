@@ -1,0 +1,15 @@
+// Name        : LSASS credential theft via comsvcs.dll MiniDump
+// Technique   : T1003.001 - OS Credential Dumping: LSASS Memory
+// Tactic      : Credential Access
+// Platform    : Advanced Hunting (unified Microsoft Defender / SecOps portal)
+// Data source : DeviceProcessEvents
+// Description : rundll32 invoking comsvcs.dll MiniDump (ordinal #24) to dump
+//               LSASS memory - a near-universal hands-on-keyboard technique.
+// Tuning      : High signal; rarely legitimate. Investigate every hit.
+// References  : Spirals ransomware (Symantec, 2026-06)
+DeviceProcessEvents
+| where Timestamp > ago(30d)
+| where FileName =~ "rundll32.exe"
+| where ProcessCommandLine has "comsvcs.dll"
+    and ProcessCommandLine has_any ("MiniDump","#24")
+| project Timestamp, DeviceName, AccountName, ProcessCommandLine, InitiatingProcessFileName

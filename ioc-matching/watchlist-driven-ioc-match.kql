@@ -1,0 +1,22 @@
+// Name        : Watchlist-driven IOC match (hashes + IPs)
+// Technique   : n/a (indicator match)
+// Tactic      : Indicator matching
+// Platform    : Microsoft Sentinel - Advanced Hunting (unified SecOps portal)
+// Data source : DeviceProcessEvents, DeviceNetworkEvents + Sentinel watchlist
+// Description : Joins device telemetry against an uploaded Sentinel watchlist so
+//               detections stay current as the list is edited - no query changes.
+// Prereq      : Upload the watchlist (see azurebeard/threat-intel) with alias
+//               'Spirals' (or 'AllIOCs' for the master), SearchKey = Indicator.
+// Tuning      : Static indicators age fast - pair with behavioural queries.
+// References  : Spirals ransomware (Symantec, 2026-06)
+let iocs = _GetWatchlist('Spirals');
+let badHashes = iocs | where IndicatorType == "SHA256" | project Indicator;
+let badIPs    = iocs | where IndicatorType == "IPv4"   | project Indicator;
+DeviceProcessEvents
+| where Timestamp > ago(30d)
+| where SHA256 in (badHashes)
+| union (
+    DeviceNetworkEvents
+    | where Timestamp > ago(30d)
+    | where RemoteIP in (badIPs))
+| project Timestamp, DeviceName, FileName, SHA256, RemoteIP, ProcessCommandLine

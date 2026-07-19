@@ -1,0 +1,15 @@
+// Name        : Tunnelling / reverse-proxy C2 (revsocks, Chisel, Cloudflared)
+// Technique   : T1572 - Protocol Tunneling
+// Tactic      : Command and Control
+// Platform    : Advanced Hunting (unified Microsoft Defender / SecOps portal)
+// Data source : DeviceNetworkEvents
+// Description : Known tunnelling binaries or connections to a known staging IP.
+//               Includes renamed binaries observed masquerading as chrome.exe.
+// Tuning      : Noisy where Cloudflare Tunnel / SOCKS proxies are sanctioned.
+//               Scope to servers or unexpected hosts before alerting.
+// References  : Spirals ransomware (Symantec, 2026-06)
+DeviceNetworkEvents
+| where Timestamp > ago(30d)
+| where RemoteIP == "185.141.216.194"
+   or InitiatingProcessFileName in~ ("revsocks.exe","tunn.exe","cloudflared-windows-amd64.exe","chrome.exe")
+| project Timestamp, DeviceName, InitiatingProcessFileName, RemoteIP, RemotePort, RemoteUrl, InitiatingProcessCommandLine

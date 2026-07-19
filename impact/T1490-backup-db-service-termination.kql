@@ -1,0 +1,19 @@
+// Name        : Backup / database service termination
+// Technique   : T1490 - Inhibit System Recovery
+// Tactic      : Impact
+// Platform    : Advanced Hunting (unified Microsoft Defender / SecOps portal)
+// Data source : DeviceProcessEvents
+// Description : Mass stop/delete/disable of backup and database services
+//               (Veeam, VMware, Hyper-V, SQL, Oracle, PostgreSQL, VSS) - the
+//               pre-encryption move to prevent recovery. A hit is a five-alarm fire.
+// Tuning      : Legitimate maintenance can trigger single hits; the danger sign is
+//               many services killed by one account in a short window.
+// References  : Spirals ransomware (Symantec, 2026-06)
+DeviceProcessEvents
+| where Timestamp > ago(30d)
+| where FileName in~ ("net.exe","sc.exe","taskkill.exe","powershell.exe")
+| where ProcessCommandLine has_any (
+    "Veeam","VMware","vmms","MSSQL","SQLTELEMETRY","OracleService",
+    "postgresql","Hyper-V","vss","Backup","stop-service","Stop-Service")
+| where ProcessCommandLine has_any ("stop","delete","disabled","kill")
+| project Timestamp, DeviceName, AccountName, FileName, ProcessCommandLine
