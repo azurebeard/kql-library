@@ -1,4 +1,4 @@
-# kql-library
+# KQL Library
 
 A growing library of **KQL hunting and detection queries** for Microsoft Defender XDR and Microsoft Sentinel, run from the unified SecOps portal ([security.microsoft.com](https://security.microsoft.com)).
 
