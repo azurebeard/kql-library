@@ -25,6 +25,7 @@ Rules:
 - **Tactic folder** uses the ATT&CK tactic in kebab-case (`credential-access`, `defense-evasion`, `command-and-control`, `lateral-movement`, `impact`, …).
 - **File name** starts with the primary technique ID (`T1003.001`), then a short kebab description. Pick the primary technique where a query spans several.
 - Indicator-match queries that map to no single technique live in `ioc-matching/` and are named by what they match.
+- **Bundled packs** — threat- or campaign-specific collections of the above queries in a single file live in `packs/<threat>.kql`, for running a full hunt in one session.
 
 ## Query header
 
@@ -51,6 +52,8 @@ Every `.kql` file opens with a standard comment block:
 | Lateral Movement | `T1021.001-rdp-enable-and-local-admin-add` |
 | Impact | `T1490-backup-db-service-termination`, `T1486-ransom-note-artifact` |
 | Indicator matching | `known-hashes-filenames-sweep`, `watchlist-driven-ioc-match` |
+
+**Packs:** `packs/spirals-ransomware.kql` — all eight queries above bundled for a full Spirals hunt in one session.
 
 ## How to use
 

@@ -1,0 +1,125 @@
+// =====================================================================
+// PACK        : Spirals Ransomware - Advanced Hunting Query Pack
+// Purpose     : Detect Spirals-aligned TTPs and IOCs across the kill chain
+// Platform    : Advanced Hunting (unified Microsoft Defender / SecOps portal)
+// Data sources: DeviceProcessEvents, DeviceNetworkEvents, DeviceFileEvents
+//               (+ Microsoft Sentinel watchlist for the final query)
+// Source      : Symantec / BleepingComputer (Spirals case, 16 June 2026)
+// Notes       : Tune the ago() window and exclude sanctioned admin tooling
+//               before promoting any query to a scheduled detection.
+//
+// The individual queries also live standalone under their MITRE tactic
+// folders in this repo; this pack bundles them for a single hunt session.
+//
+// Contents:
+//   1. Known IOC sweep - hashes + file names        (ioc-matching)
+//   2. LSASS credential theft via comsvcs.dll        (T1003.001)
+//   3. Microsoft Defender tamper / disable           (T1562.001)
+//   4. Backup / database service termination         (T1490)
+//   5. Tunnelling / reverse-proxy C2                 (T1572)
+//   6. RDP enablement + local admin creation         (T1021.001 / T1136.001)
+//   7. Ransom note artifact                          (T1486)
+//   8. Watchlist-driven IOC match                    (Sentinel)
+// =====================================================================
+
+
+// ---------------------------------------------------------------------
+// 1. Known IOC sweep - hashes + file names (indicator match)
+// ---------------------------------------------------------------------
+let spiralsFileNames = dynamic([
+    "bitsadmin.exe","vbr2116.exe","revsocks.exe","tunn.exe",
+    "cloudflared-windows-amd64.exe","tokens.exe"]);
+let spiralsHashes = dynamic([
+    "0f9574dc38e5c34a31153f0bcc603c6ec29cb3bf65c3d25380dbe86d42573141",
+    "4cab935d0ec400059a3fcdc95b6623efdd51a61dff401fba8d5da244cc2de649",
+    "7f0d49b11d0a3697685622ce510c570199bf2dc76515b3f9a6b6735de8c9134b",
+    "83a7e51f3787ac5a8a9884edd0a58ddbef380969aa6529d282a461a1a614a892",
+    "84b9a9a1668145df04faa3d0e118e2f0acbebd3d9d260baf3a355b44c815c22d",
+    "862a3ca7e944ccf0ff3a6d556b34faade4b68343015c35a014a43725ac14a2a1",
+    "b5d598b00cc3a28cabc5812d9f762819334614bae452db4e7f23eefe7b081556"]);
+DeviceProcessEvents
+| where Timestamp > ago(30d)
+| where FileName in~ (spiralsFileNames) or SHA256 in (spiralsHashes)
+| project Timestamp, DeviceName, AccountName, FileName, FolderPath, SHA256, ProcessCommandLine, InitiatingProcessFileName
+
+
+// ---------------------------------------------------------------------
+// 2. LSASS credential theft via comsvcs.dll MiniDump (T1003.001)
+// ---------------------------------------------------------------------
+DeviceProcessEvents
+| where Timestamp > ago(30d)
+| where FileName =~ "rundll32.exe"
+| where ProcessCommandLine has "comsvcs.dll" and ProcessCommandLine has_any ("MiniDump","#24")
+| project Timestamp, DeviceName, AccountName, ProcessCommandLine, InitiatingProcessFileName
+
+
+// ---------------------------------------------------------------------
+// 3. Microsoft Defender tamper / disable (T1562.001)
+// ---------------------------------------------------------------------
+DeviceProcessEvents
+| where Timestamp > ago(30d)
+| where ProcessCommandLine has_any (
+    "Set-MpPreference","DisableRealtimeMonitoring","DisableAntiSpyware",
+    "MpCmdRun.exe -RemoveDefinitions","Remove-MpThreat","Uninstall-WindowsFeature Windows-Defender")
+| project Timestamp, DeviceName, AccountName, ProcessCommandLine, InitiatingProcessFileName
+
+
+// ---------------------------------------------------------------------
+// 4. Backup / database service termination before encryption (T1490)
+// ---------------------------------------------------------------------
+DeviceProcessEvents
+| where Timestamp > ago(30d)
+| where FileName in~ ("net.exe","sc.exe","taskkill.exe","powershell.exe")
+| where ProcessCommandLine has_any (
+    "Veeam","VMware","vmms","MSSQL","SQLTELEMETRY","OracleService",
+    "postgresql","Hyper-V","vss","Backup","stop-service","Stop-Service")
+| where ProcessCommandLine has_any ("stop","delete","disabled","kill")
+| project Timestamp, DeviceName, AccountName, FileName, ProcessCommandLine
+
+
+// ---------------------------------------------------------------------
+// 5. Tunnelling / reverse proxy C2 - revsocks, Chisel, Cloudflared (T1572)
+// ---------------------------------------------------------------------
+DeviceNetworkEvents
+| where Timestamp > ago(30d)
+| where RemoteIP == "185.141.216.194"
+   or InitiatingProcessFileName in~ ("revsocks.exe","tunn.exe","cloudflared-windows-amd64.exe","chrome.exe")
+| project Timestamp, DeviceName, InitiatingProcessFileName, RemoteIP, RemotePort, RemoteUrl, InitiatingProcessCommandLine
+
+
+// ---------------------------------------------------------------------
+// 6. RDP enablement + local account creation (T1021.001 / T1136.001)
+// ---------------------------------------------------------------------
+DeviceProcessEvents
+| where Timestamp > ago(30d)
+| where (ProcessCommandLine has "fDenyTSConnections" and ProcessCommandLine has "0")
+   or (FileName =~ "net.exe" and ProcessCommandLine has_all ("user","/add"))
+   or (FileName =~ "net.exe" and ProcessCommandLine has_all ("localgroup","administrators","/add"))
+| project Timestamp, DeviceName, AccountName, ProcessCommandLine, InitiatingProcessFileName
+
+
+// ---------------------------------------------------------------------
+// 7. Ransom note artifact - RECOVERY_SECTION.log (T1486)
+// ---------------------------------------------------------------------
+DeviceFileEvents
+| where Timestamp > ago(30d)
+| where FileName =~ "RECOVERY_SECTION.log"
+| project Timestamp, DeviceName, FolderPath, InitiatingProcessFileName, InitiatingProcessAccountName
+
+
+// =====================================================================
+// 8. Watchlist-driven IOC match (Microsoft Sentinel)
+// Prereq: upload the Spirals watchlist (azurebeard/threat-intel) with
+//         alias 'Spirals', SearchKey = Indicator.
+// =====================================================================
+let iocs = _GetWatchlist('Spirals');
+let badHashes = iocs | where IndicatorType == "SHA256" | project Indicator;
+let badIPs    = iocs | where IndicatorType == "IPv4"   | project Indicator;
+DeviceProcessEvents
+| where Timestamp > ago(30d)
+| where SHA256 in (badHashes)
+| union (
+    DeviceNetworkEvents
+    | where Timestamp > ago(30d)
+    | where RemoteIP in (badIPs))
+| project Timestamp, DeviceName, FileName, SHA256, RemoteIP, ProcessCommandLine
